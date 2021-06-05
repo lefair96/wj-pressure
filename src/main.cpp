@@ -2,7 +2,7 @@
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 
-// some unit properties
+// some unit properties.
 
 // Pressure
 const float bar = 101325;
