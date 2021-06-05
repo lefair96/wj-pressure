@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
+#include <I2CKeyPad.h>
 
 // some unit properties.
 
@@ -42,31 +43,55 @@ float display_values_average_len = 5;
 float display_values_average = 0;
 
 // A5 for the analog reading of pressure
-int sensor_pressure_pin = A5;
+int sensor_pressure_pin = A3;
+
+int button_push_pin = A0;
+const int debounce_timer = 100; // 1/10 of second
+int debounce_time = 0; // 1/10 of second
+bool debounce_set = 0;
+bool button_push_toggle = 0;
+bool change_state = 0;
+int state = 0;
+
+int button_switch_pin = A1;
+
+// the keypad
+I2CKeyPad keyPad(0x20);
+
+uint32_t start, stop;
+uint32_t lastKeyPressed = 0;
+
+
+//uint32_t start, stop;
+//uint32_t lastKeyPressed = 0;
 
 
 
 void setup() {
 
 
-  // currently using pin 13 to supply voltage to LCD
-  pinMode(13,OUTPUT);
-
   pinMode(sensor_pressure_pin, INPUT);
+  pinMode(button_push_pin, INPUT);
+  pinMode(button_switch_pin, INPUT);
 
   digitalWrite(13,HIGH);
   // initialize the LCD
   lcd.init();
 
+
+
   // Turn on the blacklight and print a message..
   lcd.backlight();
 
   lcd.setCursor(0, 0);
-  lcd.print("WatAJet - WJprobe v1");
+  lcd.print("WatAJet:WJprobe -- 0");
 
   lcd.setCursor(0, 1);
   lcd.print("====================");
 
+  Wire.begin();
+    Wire.setClock(400000);
+  keyPad.begin();
 
 
 }
@@ -74,10 +99,77 @@ void setup() {
 void loop(){
   // Do nothing here...
 
+  uint32_t now = millis();
+    char keys[] = "123A456B789C*0#DNF";  // N = Nokey, F = Fail
+
+    if (now - lastKeyPressed >= 100)
+    {
+      lastKeyPressed = now;
+
+      start = micros();
+      uint8_t idx = keyPad.getKey();
+      stop = micros();
+
+      if(idx<16)
+      {
+        lcd.setCursor(19, 0);
+        lcd.print(keys[idx]);
+
+      }
+
+
+    }
+
+
+  if(digitalRead(button_push_pin))
+  {
+    if(!debounce_set)
+    {
+      debounce_set = 1;
+      debounce_time = millis();
+
+    }else
+    {
+      if(millis()-debounce_time > debounce_timer)
+      {
+        change_state = 1;
+
+
+      }
+    }
+  }else
+  {
+    if(debounce_set)
+    {
+      if(millis()-debounce_time > debounce_timer)
+      {
+        change_state = 0;
+        debounce_set = 0;
+        button_push_toggle = 0;
+      }
+    }
+  }
+
+  if(change_state && !button_push_toggle)
+  {
+    button_push_toggle = 1;
+    state = state + 1;
+    if(state > 9)
+    {
+      state = 0;
+    }
+    lcd.setCursor(19, 0);
+    lcd.print(state);
+
+    change_state = 0;
+  }
 
   if(millis()%100 == 0) // every 500 ms, 2 times per second
   {
+
+
     sensor_pressure_voltage = map(analogRead(sensor_pressure_pin), 0, 1023, 0, 5000);
+
 
     sensor_ampfactor = sensor_nominal_voltage/sensor_supply_voltage;
 
@@ -90,8 +182,17 @@ void loop(){
     lcd.print("    "); // to clear previous numbers
 
     lcd.setCursor(0,3);
-    lcd.print("P(kPa):");
-    lcd.print(display_values_pressure);
+
+    if(digitalRead(button_switch_pin))
+    {
+        lcd.print("P(bar):");
+        lcd.print(display_values_pressure*kPa/bar);
+    }else
+    {
+        lcd.print("P(kPa):");
+        lcd.print(display_values_pressure);
+    }
+
     lcd.print("    "); // to clear previous numbers
 
   }
