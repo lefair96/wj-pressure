@@ -43,9 +43,9 @@ float display_values_average_len = 5;
 float display_values_average = 0;
 
 // A5 for the analog reading of pressure
-int sensor_pressure_pin = A3;
+int sensor_pressure_pin = A0;
 
-int button_push_pin = A0;
+int button_push_pin = 13;
 const int debounce_timer = 100; // 1/10 of second
 int debounce_time = 0; // 1/10 of second
 bool debounce_set = 0;
@@ -53,7 +53,7 @@ bool button_push_toggle = 0;
 bool change_state = 0;
 int state = 0;
 
-int button_switch_pin = A1;
+int button_switch_pin = 12;
 
 // the keypad
 I2CKeyPad keyPad(0x20);
@@ -74,7 +74,6 @@ void setup() {
   pinMode(button_push_pin, INPUT);
   pinMode(button_switch_pin, INPUT);
 
-  digitalWrite(13,HIGH);
   // initialize the LCD
   lcd.init();
 
@@ -100,7 +99,8 @@ void loop(){
   // Do nothing here...
 
   uint32_t now = millis();
-    char keys[] = "123A456B789C*0#DNF";  // N = Nokey, F = Fail
+    //char keys[] = "123A456B789C*0#DNF";  // N = Nokey, F = Fail
+    char keys[] = "DCBA#9630852*741NF";  // N = Nokey, F = Fail
 
     if (now - lastKeyPressed >= 100)
     {
