@@ -2,6 +2,8 @@
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 #include <I2CKeyPad.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
 
 // some unit properties.
 
@@ -45,7 +47,7 @@ float display_values_average = 0;
 // A5 for the analog reading of pressure
 int sensor_pressure_pin = A0;
 
-int button_push_pin = 13;
+int button_push_pin = 5;
 const int debounce_timer = 100; // 1/10 of second
 int debounce_time = 0; // 1/10 of second
 bool debounce_set = 0;
@@ -53,13 +55,19 @@ bool button_push_toggle = 0;
 bool change_state = 0;
 int state = 0;
 
-int button_switch_pin = 12;
+int button_switch_pin = 4;
 
 // the keypad
 I2CKeyPad keyPad(0x20);
 
 uint32_t start, stop;
 uint32_t lastKeyPressed = 0;
+
+// the temperature sensor
+#define SENSOR_BUS_PIN 12
+
+OneWire oneWire(SENSOR_BUS_PIN);
+DallasTemperature sensors(&oneWire);
 
 
 //uint32_t start, stop;
@@ -91,6 +99,10 @@ void setup() {
   Wire.begin();
     Wire.setClock(400000);
   keyPad.begin();
+
+  Serial.begin(9600);
+   Serial.println("DS18B20 test");
+   sensors.begin();
 
 
 }
@@ -166,6 +178,13 @@ void loop(){
 
   if(millis()%100 == 0) // every 500 ms, 2 times per second
   {
+
+    Serial.print("Richiesta temperatura... ");
+  //L'esecuzione si blocca sul comando per il tempo richiesto (dipende dalla risoluzione impostata)
+  sensors.requestTemperatures(); //Invio comando per leggere temperatura
+  //Stampo temperatura del (primo) sensore del bus
+  Serial.print(sensors.getTempCByIndex(0));
+  Serial.println("°C");
 
 
     sensor_pressure_voltage = map(analogRead(sensor_pressure_pin), 0, 1023, 0, 5000);
