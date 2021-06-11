@@ -1,17 +1,22 @@
 import serial
-import tkinter as tk
-from tkinter import filedialog
+import serial.tools.list_ports
 
-arduino_port = "COM3" #serial port of Arduino
+ports = list(serial.tools.list_ports.comports())
+for p in ports:
+    print(p)
+    if "Dispositivo seriale USB" in p.description:
+        arduino_port = p.name
+
+#arduino_port = "COM3" #serial port of Arduino
 baud = 115200 #arduino uno runs at 9600 baud
 fileName="analog-data.csv" #name of the CSV file generated
 
+fileName = input("Name of file?")
 
+if len(fileName) == 0:
+    fileName = "data"
 
-root = tk.Tk()
-root.withdraw()
-
-fileName = filedialog.asksaveasfilename()
+fileName = fileName+".csv"
 
 ser = serial.Serial(arduino_port, baud)
 print("Connected to Arduino port:" + arduino_port)
@@ -20,30 +25,30 @@ print("Created file")
 
 samples = 10 #how many samples to collect
 
-samples = input("Enter your value: ")
+samples = input("How many samples? (sampling frequency of 100 Hz. 6000 samples = 1 min)")
 samples = int(samples)
 
-print_labels = False
-line = 0 #start at 0 because our header is 0 (not real data)
-while line <= samples:
-    # incoming = ser.read(9999)
-    # if len(incoming) > 0:
-    if print_labels:
-        if line==0:
-            print("Printing Column Headers")
-        else:
-            print("Line " + str(line) + ": writing...")
-    getData=str(ser.readline())
+if samples == 0:
+    samples = 6000 #1 minute
+elif samples < 0:
+    samples = 8640000 #24 hours
+
+line = 0
+ser.flushInput()
+
+while line < samples:
+
+    ser_bytes = ser.readline()
+
 
     #changes comma decimal separator format
+    if len(ser_bytes) > 0:
+        decoded_bytes = ser_bytes[0:len(ser_bytes)-2].decode("utf-8")
+        data=decoded_bytes.replace(".",",")
+        print(data)
 
-    #data=getData[0:][:-2]
-    data=getData[3:][:-5].replace(".",",")
-    print(data)
-
-    file = open(fileName, "a")
-    file.write(data + "\n") #write data with a newline
-    line = line+1
+        file.write(data + "\n") #write data with a newline
+        line = line+1
 
 print("Data collection complete!")
 file.close()

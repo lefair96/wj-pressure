@@ -5,7 +5,17 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
-// some unit properties.
+// ================ machine states ================
+
+#define stateA0 300
+#define stateA1 301
+#define stateA2 302
+#define stateB0 200
+#define stateB1 201
+#define stateB2 202
+
+
+// ================ some unit properties ================
 
 // Pressure
 const float bar = 101325;
@@ -21,59 +31,75 @@ const float V = 1000;
 const float s = 1000;
 const float ms = 1;
 
-// sensor properties
+//  ================ device properties (datasheet) ================
+
+// pressure sensor
 const float sensor_pressure_range [2] = {20*kPa, 400*kPa};
 const float sensor_pressure_responseTime = 1*ms;
 const float sensor_pressure_warmUpTime = 20*ms;
 const float sensor_pressure_sensitivity = 12.1*mV/kPa; //V/Pa
 const float sensor_pressure_errorMax = 5.5*kPa; // +/- 5.5
 
-// display properties
+// display
 const int display_nCols = 20;
 const int display_nRows = 4;
 
+// ================ devices setup ================
+
+// pressure sensor
+int sensor_pressure_pin = A0;
+
+// temperature sensor
+#define SENSOR_BUS_PIN 12
+OneWire oneWire(SENSOR_BUS_PIN);
+DallasTemperature sensors(&oneWire);
+
+// IO buttons
+int button_push_pin = 5;
+int button_switch_pin = 4;
+
+const int debounce_timer = 100; // 1/10 of second
+int debounce_time = 0; // 1/10 of second
+bool debounce_set = 0;
+bool button_push_toggle = 0;
+
+
+
+// the keypad
+I2CKeyPad keyPad(0x20);
+uint32_t start, stop;
+uint32_t lastKeyPressed = 0;
+
+// LCD
 LiquidCrystal_I2C lcd(0x27,display_nCols,display_nRows);  // set the LCD address to 0x27 for a 16 chars and 2 line display
-float display_units_pressure = kPa; // so that you can express the readings in any other way
-float display_values_pressure = 0;
+
+// ================ Script variables ================
+
+// readings and corrections
 float sensor_pressure_reading;
 float sensor_pressure_voltage;
 float sensor_supply_voltage = 4960;
 float sensor_nominal_voltage = 5100;
 float sensor_ampfactor;
+float loop_100Hz = millis();
+float loop_4Hz = millis();
+float loop_1Hz = millis();
 
+// display variables
 float display_values_average_len = 5;
 float display_values_average = 0;
+float display_units_pressure = kPa; // so that you can express the readings in any other way
+float display_values_pressure = 0;
 
-// A5 for the analog reading of pressure
-int sensor_pressure_pin = A0;
-
-int button_push_pin = 5;
-const int debounce_timer = 100; // 1/10 of second
-int debounce_time = 0; // 1/10 of second
-bool debounce_set = 0;
-bool button_push_toggle = 0;
+// machine state
 bool change_state = 0;
 int state = 0;
+int keyPadState = 300;
+uint8_t idx = 3;
 
-int button_switch_pin = 4;
-
-// the keypad
-I2CKeyPad keyPad(0x20);
-
-uint32_t start, stop;
-uint32_t lastKeyPressed = 0;
-
-// the temperature sensor
-#define SENSOR_BUS_PIN 12
-
-OneWire oneWire(SENSOR_BUS_PIN);
-DallasTemperature sensors(&oneWire);
-
-
-//uint32_t start, stop;
-//uint32_t lastKeyPressed = 0;
-
-
+// ================ ================ ================
+// ================       SETUP      ================
+// ================ ================ ================
 
 void setup() {
 
@@ -91,7 +117,7 @@ void setup() {
   lcd.backlight();
 
   lcd.setCursor(0, 0);
-  lcd.print("WatAJet:WJprobe -- 0");
+  lcd.print("WatAJet:WJprobe --A0");
 
   lcd.setCursor(0, 1);
   lcd.print("====================");
@@ -100,32 +126,38 @@ void setup() {
     Wire.setClock(400000);
   keyPad.begin();
 
-  Serial.begin(9600);
+  Serial.begin(115200);
    Serial.println("DS18B20 test");
    sensors.begin();
 
 
 }
 
+// ================ ================ ================
+// ================       LOOP       ================
+// ================ ================ ================
+
 void loop(){
-  // Do nothing here...
 
   uint32_t now = millis();
-    //char keys[] = "123A456B789C*0#DNF";  // N = Nokey, F = Fail
-    char keys[] = "DCBA#9630852*741NF";  // N = Nokey, F = Fail
+
+    //char keys[] = "123A456B789C*0#DNF"; // IF keypad pins are connected 1-1 with I2C pins
+    char keys[] = "DCBA#9630852*741NF";  // IF keypad pins are connected 1-8 with I2C pins
+    // N = Nokey, F = Fail
 
     if (now - lastKeyPressed >= 100)
     {
       lastKeyPressed = now;
-
       start = micros();
-      uint8_t idx = keyPad.getKey();
+      uint8_t idx2 = keyPad.getKey();
       stop = micros();
 
-      if(idx<16)
+      if(idx2<16)
       {
-        lcd.setCursor(19, 0);
+        idx = idx2;
+        lcd.setCursor(18, 0);
         lcd.print(keys[idx]);
+        keyPadState = 100*idx + state; // 0 = D, 100 = C, 200 = B, 300 = A
 
       }
 
@@ -166,53 +198,93 @@ void loop(){
   {
     button_push_toggle = 1;
     state = state + 1;
-    if(state > 9)
+    if(state > 2)
     {
       state = 0;
     }
+    keyPadState = 100*idx + state;
     lcd.setCursor(19, 0);
     lcd.print(state);
 
     change_state = 0;
   }
 
-  if(millis()%100 == 0) // every 500 ms, 2 times per second
+  // ======= Pressure reading ==============
+
+  if(millis() > loop_100Hz + 10*ms) // every 10 ms, 100 Hz
   {
-
-    Serial.print("Richiesta temperatura... ");
-  //L'esecuzione si blocca sul comando per il tempo richiesto (dipende dalla risoluzione impostata)
-  sensors.requestTemperatures(); //Invio comando per leggere temperatura
-  //Stampo temperatura del (primo) sensore del bus
-  Serial.print(sensors.getTempCByIndex(0));
-  Serial.println("°C");
-
+    loop_100Hz = millis();
 
     sensor_pressure_voltage = map(analogRead(sensor_pressure_pin), 0, 1023, 0, 5000);
-
-
     sensor_ampfactor = sensor_nominal_voltage/sensor_supply_voltage;
 
     sensor_pressure_reading = sensor_pressure_voltage*sensor_ampfactor/sensor_pressure_sensitivity;
     display_values_pressure = sensor_pressure_reading/display_units_pressure;
 
-    lcd.setCursor(0,2);
-    lcd.print("mV:");
-    lcd.print(sensor_pressure_voltage);
-    lcd.print("    "); // to clear previous numbers
-
-    lcd.setCursor(0,3);
 
     if(digitalRead(button_switch_pin))
     {
-        lcd.print("P(bar):");
-        lcd.print(display_values_pressure*kPa/bar);
-    }else
-    {
-        lcd.print("P(kPa):");
-        lcd.print(display_values_pressure);
+      Serial.println("t(ms);P(kPa)");
+      Serial.print(millis());
+      Serial.print(";");
+      Serial.println(display_values_pressure);
+
     }
 
-    lcd.print("    "); // to clear previous numbers
+  // ============ Temperature reading ================
+  }
+
+  if(millis() > loop_1Hz + 1*s) // 1 Hz signal
+  {
+
+      loop_1Hz = millis();
+      sensors.requestTemperatures();
+
+    if(digitalRead(button_switch_pin))
+    {
+      Serial.println("t(ms);T(°C)");
+      Serial.print(millis());
+      Serial.print(";");
+      Serial.println(sensors.getTempCByIndex(0));
+
+    }
+  }
+
+  // ============ Display refresh =============
+
+  if(millis() > loop_4Hz + 250*ms)
+  {
+    loop_4Hz = millis();
+
+    switch(keyPadState)
+    {
+      case stateA0:
+        lcd.setCursor(0,2);
+        lcd.print("mV:");
+        lcd.print(sensor_pressure_voltage);
+        lcd.print("    "); // to clear previous numbers
+        lcd.setCursor(0,3);
+        lcd.print("P(kPa):");
+        lcd.print(display_values_pressure);
+        lcd.print("    "); // to clear previous numbers
+      break;
+
+      case stateB0:
+      lcd.setCursor(0,2);
+      lcd.print("                    "); // to clear previous numbers
+      lcd.setCursor(0,3);
+      lcd.print("T(*C):");
+      lcd.print(sensors.getTempCByIndex(0));
+      lcd.print("    "); // to clear previous numbers
+      break;
+
+      default:
+        lcd.setCursor(0,2);
+        lcd.print("                    ");
+        lcd.setCursor(0,3);
+        lcd.print("                    ");
+      break;
+    }
 
   }
 
