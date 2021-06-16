@@ -13,22 +13,23 @@
 #define stateB0 200
 #define stateB1 201
 #define stateB2 202
+#define stateC0 100
 
 
 // ================ some unit properties ================
 
 // Pressure
-const float bar = 101325;
-const float Pa = 1;
-const float MPa = 1000000;
-const float kPa = 1000;
+const float bar = 1/101.325; //Pa/bar
+const float Pa = 1000; //Pa/kPa
+const float MPa = 1/1000; // MPa/Pa
+const float kPa = 1; //kPa/kPa
 
 // Voltage
 const float mV = 1;
-const float V = 1000;
+const float V = 1/1000; // mV/V
 
 // Time
-const float s = 1000;
+const float s = 1000; // ms/s
 const float ms = 1;
 
 //  ================ device properties (datasheet) ================
@@ -37,7 +38,7 @@ const float ms = 1;
 const float sensor_pressure_range [2] = {20*kPa, 400*kPa};
 const float sensor_pressure_responseTime = 1*ms;
 const float sensor_pressure_warmUpTime = 20*ms;
-const float sensor_pressure_sensitivity = 12.1*mV/kPa; //V/Pa
+const float sensor_pressure_sensitivity = 12.1*mV/kPa; //mv/kPa
 const float sensor_pressure_errorMax = 5.5*kPa; // +/- 5.5
 
 // display
@@ -81,9 +82,12 @@ float sensor_pressure_voltage;
 float sensor_supply_voltage = 4960;
 float sensor_nominal_voltage = 5100;
 float sensor_ampfactor;
-float loop_100Hz = millis();
-float loop_4Hz = millis();
-float loop_1Hz = millis();
+float loop_pressure = millis();
+float loop_display = millis();
+float loop_temperature = millis();
+float loop_serial = millis();
+float dt_serial = 5*s;
+float sensor_temperature_reading;
 
 // display variables
 float display_values_average_len = 5;
@@ -95,7 +99,7 @@ float display_values_pressure = 0;
 bool change_state = 0;
 int state = 0;
 int keyPadState = 300;
-uint8_t idx = 3;
+uint8_t idx = 17;
 
 // ================ ================ ================
 // ================       SETUP      ================
@@ -117,7 +121,7 @@ void setup() {
   lcd.backlight();
 
   lcd.setCursor(0, 0);
-  lcd.print("WatAJet:WJprobe --A0");
+  lcd.print("WatAJet:WJmonitor A0");
 
   lcd.setCursor(0, 1);
   lcd.print("====================");
@@ -211,71 +215,96 @@ void loop(){
 
   // ======= Pressure reading ==============
 
-  if(millis() > loop_100Hz + 10*ms) // every 10 ms, 100 Hz
+  if(millis() > loop_pressure + 10*ms) // every 10 ms, 100 Hz
   {
-    loop_100Hz = millis();
-
+    loop_pressure = millis();
     sensor_pressure_voltage = map(analogRead(sensor_pressure_pin), 0, 1023, 0, 5000);
     sensor_ampfactor = sensor_nominal_voltage/sensor_supply_voltage;
-
     sensor_pressure_reading = sensor_pressure_voltage*sensor_ampfactor/sensor_pressure_sensitivity;
-    display_values_pressure = sensor_pressure_reading/display_units_pressure;
-
-
-    if(digitalRead(button_switch_pin))
-    {
-      Serial.println("t(ms);P(kPa)");
-      Serial.print(millis());
-      Serial.print(";");
-      Serial.println(display_values_pressure);
-
-    }
-
-  // ============ Temperature reading ================
   }
 
-  if(millis() > loop_1Hz + 1*s) // 1 Hz signal
+  // ============ Temperature reading ================
+
+  if(millis() > loop_temperature + 1*s) // 1 Hz signal
+  {
+      loop_temperature = millis();
+      sensors.requestTemperatures();
+      sensor_temperature_reading = sensors.getTempCByIndex(0);
+  }
+
+  // ============ Serial transmission =============
+
+  if(millis() > loop_serial + dt_serial) // 1 Hz signal
   {
 
-      loop_1Hz = millis();
-      sensors.requestTemperatures();
+      loop_serial = millis();
+
 
     if(digitalRead(button_switch_pin))
     {
-      Serial.println("t(ms);T(°C)");
+      Serial.println("<<;t:ms;T:°C;P:kPa");
+      Serial.print(">>;");
       Serial.print(millis());
       Serial.print(";");
-      Serial.println(sensors.getTempCByIndex(0));
+      Serial.print(sensor_temperature_reading);
+      Serial.print(";");
+      Serial.println(sensor_pressure_reading);
 
     }
   }
 
   // ============ Display refresh =============
 
-  if(millis() > loop_4Hz + 250*ms)
+  if(millis() > loop_display + 500*ms)
   {
-    loop_4Hz = millis();
+    loop_display = millis();
+
+
 
     switch(keyPadState)
     {
       case stateA0:
         lcd.setCursor(0,2);
+        lcd.print("                    ");
+        lcd.setCursor(0,2);
         lcd.print("mV:");
         lcd.print(sensor_pressure_voltage);
-        lcd.print("    "); // to clear previous numbers
+
+        lcd.setCursor(0,3);
+        lcd.print("                    ");
         lcd.setCursor(0,3);
         lcd.print("P(kPa):");
-        lcd.print(display_values_pressure);
-        lcd.print("    "); // to clear previous numbers
+        lcd.print(sensor_pressure_reading);
       break;
 
       case stateB0:
       lcd.setCursor(0,2);
-      lcd.print("                    "); // to clear previous numbers
+      lcd.print("                    ");
+      lcd.setCursor(0,2);
+      lcd.print("t(ms):");
+      lcd.print(millis());
+
+      lcd.setCursor(0,3);
+      lcd.print("                    ");
       lcd.setCursor(0,3);
       lcd.print("T(*C):");
-      lcd.print(sensors.getTempCByIndex(0));
-      lcd.print("    "); // to clear previous numbers
+      lcd.print(sensor_temperature_reading);
+
+      break;
+
+      case stateC0:
+      lcd.setCursor(0,2);
+      lcd.print("                    ");
+      lcd.setCursor(0,2);
+      lcd.print("T(*C):");
+      lcd.print(sensor_temperature_reading);
+
+      lcd.setCursor(0,3);
+      lcd.print("                    ");
+      lcd.setCursor(0,3);
+      lcd.print("P(kPa):");
+      lcd.print(sensor_pressure_reading);
+
       break;
 
       default:

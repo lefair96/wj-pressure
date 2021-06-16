@@ -1,6 +1,7 @@
 import serial
 import serial.tools.list_ports
 
+
 ports = list(serial.tools.list_ports.comports())
 for p in ports:
     print(p)
@@ -25,18 +26,18 @@ print("Created file")
 
 samples = 10 #how many samples to collect
 
-samples = input("How many samples? (sampling frequency of 100 Hz. 6000 samples = 1 min)")
+samples = input("How many samples?")
 samples = int(samples)
 
 if samples == 0:
-    samples = 6000 #1 minute
+    samples = 6000 #1 minute @ 100 Hz
 elif samples < 0:
-    samples = 8640000 #24 hours
+    samples = 8640000 #24 hours @ 100 Hz
 
 line = 0
 ser.flushInput()
 
-while line < samples:
+while line < samples*2:
 
     ser_bytes = ser.readline()
 
@@ -48,7 +49,7 @@ while line < samples:
         print(data)
 
         file.write(data + "\n") #write data with a newline
-        line = line+1
+        line = line + 1
 
 print("Data collection complete!")
 file.close()
